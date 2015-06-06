@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Stream Link Generator</title>
+  <style>
+    body { font-family: Arial, Verdana, sans-serif; font-size: 14px; }
+    input, select {border: 1px solid #ccc; border-radius: 3px; line-height: 24px; vertical-align: top; }
+    input { width: 240px; padding: 0 5px; height: 30px; }
+    select { height: 30px; }
+    label { display: inline-block; width: 100px; line-height: 30px; }
+    div.input { margin-bottom: 3px; }
+    #error { color: red; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <form id="generator" method="post" action="#">
+    <div class="input">
+      <label for="session">Session:</label>
+      <input type="text" id="session" placeholder="10151951621528460038">
+      <a href="#" id="session-link">Get Session ID</a>
+      <span>(copy the hash value that will appear in address bar)</span>
+    </div>
+    <div class="input">
+      <label for="channel">Channel:</label>
+      <select id="channel"></select>
+      <span>Channels marked with asterisk (*) have content ID's already defined</span>
+    </div>
+    <div class="input">
+      <label for="quality">Quality:</label>
+      <select id="quality"></select>
+    </div>
+    <div class="input">
+      <label for="content">Content ID:</label>
+      <input type="text" id="content-id" placeholder="Enter content ID">
+      <span>Filled automatically when content ID for selected channel is available</span>
+    </div>
+    <div class="input"><button type="submit" id="go">Generate</button></div>
+    <div class="input"><button type="button" class="hidden" id="file">Download playlist with all available channels</button></div>
+  </form>
+
+  <p id="error"></p>
+  
+  <p id="url"></p>
+
+  <script>
+  
+    var settings = {
+      protocol: 'http',
+      url: 'orbit2.starman.ee',
+      ip: '62.65.253.86',
+      id: 'fkcx8n',
+      dlFilename: 'playlist',
+      defaults: {
+        channel: 'ETV',
+        quality: 'High'
+      },
+      quality: [
+        {"name":"Low","plName":"01"},
+        {"name":"Mobile","plName":"02"},
+        {"name":"Medium","plName":"03"},
+        {"name":"High","plName":"04"}
+      ],
+      ext: 'm3u8',
+      channels: [{"id":51061,"name":"RTR Planeta"},{"id":51035,"name":"History"},{"id":51011,"name":"Sony Turbo"},{"id":51028,"name":"Eurosport"},{"id":51023,"name":"BBC World News"},{"id":51001,"name":"ETV"},{"id":51015,"name":"TLC"},{"id":51006,"name":"Kanal 11"},{"id":51008,"name":"Fox Life"},{"id":51063,"name":"NTV Mir"},{"id":51004,"name":"ETV2"},{"id":51010,"name":"Sony TV"},{"id":51020,"name":"Kidzone"},{"id":51002,"name":"Kanal 2"},{"id":51036,"name":"National Geographic"},{"id":51037,"name":"Discovery"},{"id":51009,"name":"Fox"},{"id":51019,"name":"Pingviniukas"},{"id":51038,"name":"Animal Planet"},{"id":51007,"name":"Kanal 12"}],
+      contentIds: [
+        {"id":"420f143837051f7aa9a3a9d41de44c40","channel":"ETV"},
+        {"id":"65cf47c7178524a2c190a91842e2d91d","channel":"TLC"},
+        {"id":"26c6e6f08bbab267787ba9cbd6911ae0","channel":"Kanal 2"},
+        {"id":"94369ef5998f3b88043dc447664e7c9a","channel":"Kanal 11"},
+        {"id":"be02880d66e28a8ab5accb9e4e3c691c","channel":"History"},
+        {"id":"8a461d6ae8659f743ed74a5da20f6cc9","channel":"Kanal 12"},
+        {"id":"681ead330bf69a7efca3d2934efd4586","channel":"Sony TV"},
+        {"id":"d0dfc25de05c2a71cb447b94bb2b12a0","channel":"Sony Turbo"},
+        {"id":"1de4a1012251d562bd1149d1e4c8e881","channel":"Pingviniukas"},
+        {"id":"0cb32cc435b37ccbbd5153fd0af54025","channel":"Fox"},
+        {"id":"d93150132b84f9d2a6f81258bfb380b2","channel":"Fox Life"}
+      ],
+      elems: {
+        sessionLink: document.getElementById('session-link'),
+        session: document.getElementById('session'),
+        channel: document.getElementById('channel'),
+        quality: document.getElementById('quality'),
+        content: document.getElementById('content-id'),
+        url: document.getElementById('url'),
+        error: document.getElementById('error'),
+        file: document.getElementById('file'),
+        form: document.getElementById('generator')
+      }
+    };
+    
+    // General page functions
+    var Page = {
+      setContentIdValue: function() {
+        contentId = Channel.getContentId(Channel.getName(settings.elems.channel.value));
+        value = contentId ? contentId : '';
+        settings.elems.content.value = value;
+      },
+      setSessionLink: function() {
+        settings.elems.sessionLink.setAttribute('href', settings.protocol + '://' + settings.ip);
+      },
+      saveSession: function() {
+        if (typeof Storage !== 'undefined') {
+          localStorage.session = settings.elems.session.value;
+          return true;
+        }
+        return false;
+      },
+      setSession: function() {
+        if (typeof Storage !== 'undefined') {
+          if (typeof localStorage.session !== 'undefined') {
+            settings.elems.session.value = localStorage.session;
+            return true;
+          }
+        }
+        return false;
+      },
+      validate: function() {
+        while (settings.elems.error.firstChild) settings.elems.error.removeChild(settings.elems.error.firstChild);
+        while (settings.elems.url.firstChild) settings.elems.url.removeChild(settings.elems.url.firstChild);
+        if (settings.elems.session.value !== '' && settings.elems.content.value !== '') {
+          return true;
+        }
+        if (settings.elems.session.value == '') {
+          settings.elems.error.innerHTML = settings.elems.error.innerHTML + 'Session field is empty!<br>';
+        }
+        if (settings.elems.content.value == '') {
+          settings.elems.error.innerHTML = settings.elems.error.innerHTML + 'Content ID field is empty!<br>';
+        }
+        return false;
+      },
+      generateUrl: function(contentId, channelId) {
+        var urlParts = [
+          settings.protocol + '://',
+          settings.ip + '/session/',
+          settings.elems.session.value + '/',
+          settings.id + '/c/',
+          contentId.substring(0,3).chunk(1).join('/') + '/c_',
+          channelId + '_',
+          contentId + '/',
+          settings.elems.quality.value + '.',
+          settings.ext
+        ];
+        return urlParts.join('');
+      },
+      updateUrl: function() {
+        while (settings.elems.url.firstChild) settings.elems.url.removeChild(settings.elems.url.firstChild);
+        var url = this.generateUrl(settings.elems.content.value, settings.elems.channel.value)
+        var text = document.createTextNode(url);
+        settings.elems.url.appendChild(text);
+      },
+      // Check if the browser supports download attribute
+      initFileButton: function() {
+        var a = document.createElement('a');
+        if (typeof a.download != 'undefined') {
+          settings.elems.file.className = settings.elems.file.classList.remove('hidden');
+        }
+      },
+      createFileDownload: function(options) {
+        var defaults = {
+          mimetype: 'application/x-mpegurl',
+          charset: 'utf-8',
+          filename: settings.dlFilename,
+          extension: 'm3u',
+          content: ''
+        };
+        var options = defaults.extend(options);
+        
+        var pom = document.createElement('a');
+        pom.setAttribute('href', 'data:'+options.mimetype+';charset='+options.charset+',' + encodeURIComponent(options.content));
+        pom.setAttribute('download', options.filename + '.' + options.extension);
+
+        if (document.createEvent) {
+            var event = document.createEvent('MouseEvents');
+            event.initEvent('click', true, true);
+            pom.dispatchEvent(event);
+        } else {
+            pom.click();
+        }
+      }
+    };
+    
+    // Functions related to channels
+    var Channel = {
+      getId: function(name) {
+        for (var i = 0; i < settings.channels.length; i++) {
+          if (settings.channels[i].name == name) {
+            return settings.channels[i].id;
+          }
+        }
+        return false;
+      },
+      getName: function(id) {
+        for (var i = 0; i < settings.channels.length; i++) {
+          if (settings.channels[i].id == id) {
+            return settings.channels[i].name;
+          }
+        }
+        return false;
+      },
+      getContentId: function(channelName) {
+        for (var i = 0; i < settings.contentIds.length; i++) {
+          if (settings.contentIds[i].channel == channelName) {
+            return settings.contentIds[i].id;
+          }
+        }
+        return false;
+      }
+    };
+    
+    // Some helper functions
+    String.prototype.chunk = function(idx) {
+      var chunk = [];
+      var string = this.toString();
+      for (var i=0;i<this.length;i=i+idx) {
+        var end = i+idx;
+        chunk.push(string.slice(i,end));
+      }
+      return chunk;
+    };
+    
+    Object.prototype.extend = function(mergable) {
+        var object = {};
+        for (var attrname in this) { object[attrname] = this[attrname]; }
+        for (var attrname in mergable) { object[attrname] = mergable[attrname]; }
+        return object;
+    };
+    
+    // Fill quality select
+    for (i = 0; i < settings.quality.length; i++) {
+      option = document.createElement("OPTION");
+      option.value = settings.quality[i].plName;
+      option.innerHTML = settings.quality[i].name;
+      if (settings.quality[i].name == settings.defaults.quality) {
+        option.setAttribute('selected', 'selected');
+      }
+      settings.elems.quality.appendChild(option);
+    }
+    
+    // Fill channel select
+    for (i = 0; i < settings.channels.length; i++) {
+      option = document.createElement("OPTION");
+      option.value = settings.channels[i].id;
+      channelName = settings.channels[i].name;
+      hasContentId = Channel.getContentId(channelName) ? true : false;
+      optionName = hasContentId ? channelName + '*' : channelName;
+      option.innerHTML = optionName;
+      if (channelName == settings.defaults.channel) {
+        option.setAttribute('selected', 'selected');
+      }
+      settings.elems.channel.appendChild(option);
+    }
+    
+    // Initialize file button if browser supports it
+    Page.initFileButton();
+    
+    // If session is previously saved, then fill the session field
+    Page.setSession();
+    
+    // Add session link address on page load
+    Page.setSessionLink();
+    
+    // Fill the content id input on page load
+    Page.setContentIdValue();
+    // Fill the content id input on channel change, when the id is available
+    settings.elems.channel.addEventListener('change', function(){
+      Page.setContentIdValue();
+    });
+    
+    // Listen to form submit
+    settings.elems.form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var isValid = Page.validate();
+      if (isValid) {
+        Page.updateUrl();
+      }
+    });
+    
+    // If session field is changed, save it to local storage
+    settings.elems.session.addEventListener('input', function(){
+      Page.saveSession();
+    });
+    
+    settings.elems.file.addEventListener('click', function(){
+      var isValid = Page.validate();
+      if (!isValid) return false;
+      var content = '#EXTM3U\n\n';
+      
+      for (i = 0;i<settings.contentIds.length;i++) {
+        var channelId = Channel.getId(settings.contentIds[i].channel);
+        var contentId = settings.contentIds[i].id;
+        var generatedUrl = Page.generateUrl(contentId, channelId);
+        content = content + '#EXTINF:-1,'+settings.contentIds[i].channel+'\n'+generatedUrl+'\n\n';
+      }
+      
+      Page.createFileDownload({content: content});
+    });
+    
+  </script>
+</body>
+</html>
